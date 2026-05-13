@@ -225,12 +225,11 @@ shasum -a 256 "copilot-api-server-${VERSION}-${TARGET}.tar.gz"
 
 ## 自动发布（GitHub Release）
 
-仓库内置 `.github/workflows/release.yml`，覆盖 4 个平台：
+仓库内置 `.github/workflows/release.yml`，覆盖 3 个平台：
 
 | Target | 适用 |
 |---|---|
 | `aarch64-apple-darwin` | Apple Silicon Mac (M1/M2/M3/M4) |
-| `x86_64-apple-darwin` | Intel Mac |
 | `x86_64-unknown-linux-musl` | x86_64 Linux 服务器（静态，无 glibc 依赖） |
 | `aarch64-unknown-linux-musl` | ARM64 Linux 服务器 / 树莓派 4+ |
 
