@@ -1,0 +1,143 @@
+name: release
+
+# 触发方式：
+#   1. 推 tag：git tag v0.1.0 && git push origin v0.1.0   （自动跑）
+#   2. 手动：GitHub Actions → release → Run workflow，输入版本号 (例如 v0.1.0)
+#      如果该 tag 不存在会自动创建并推送
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号 tag（必须以 v 开头，例如 v0.1.0）"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  BIN_NAME: copilot-api-server
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ─────────────────────────────────────────────
+  # 1. 解析版本号 + 创建 draft release
+  # ─────────────────────────────────────────────
+  create-release:
+    name: create release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 解析版本号
+        id: resolve
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::version 必须形如 v0.1.0，收到: $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "解析到版本号: $VERSION"
+
+      - name: 不存在则创建并推送 tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "tag $VERSION 已存在，跳过创建"
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$VERSION"
+            git push origin "$VERSION"
+          fi
+
+      - name: 创建 Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve.outputs.version }}
+          name: ${{ steps.resolve.outputs.version }}
+          draft: true
+          generate_release_notes: true
+
+  # ─────────────────────────────────────────────
+  # 2. 多平台交叉编译 + 上传产物
+  # ─────────────────────────────────────────────
+  build:
+    name: build ${{ matrix.target }}
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Apple Silicon
+          - target: aarch64-apple-darwin
+            os: macos-14
+          # macOS Intel
+          - target: x86_64-apple-darwin
+            os: macos-13
+          # Linux x86_64 静态 (musl)
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          # Linux ARM64 静态 (musl)，适用于 ARM 云主机 / 树莓派 4+
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.create-release.outputs.version }}
+
+      - name: 安装 Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: 缓存 cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # taiki-e/upload-rust-binary-action 自动：
+      #   - 对 *-musl / 跨编 Linux 用 cross
+      #   - 打 tar.gz
+      #   - 生成 .sha256
+      #   - 上传到对应 tag 的 Release
+      - name: 编译并上传
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: ${{ env.BIN_NAME }}
+          target: ${{ matrix.target }}
+          archive: $bin-$tag-$target
+          tar: unix
+          checksum: sha256
+          ref: refs/tags/${{ needs.create-release.outputs.version }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─────────────────────────────────────────────
+  # 3. 全部产物上传完后，把 Release 从 draft 改成 published
+  # ─────────────────────────────────────────────
+  publish:
+    name: publish release
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          draft: false
+          generate_release_notes: true

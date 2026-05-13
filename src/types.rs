@@ -3,18 +3,13 @@ use serde_json::Value;
 
 // ===== 多模态消息内容 =====
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MessageContent {
     Text(String),
     Parts(Vec<ContentPart>),
+    #[default]
     Null,
-}
-
-impl Default for MessageContent {
-    fn default() -> Self {
-        MessageContent::Null
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +86,7 @@ pub struct FunctionDef {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatCompletionRequest {
+    #[serde(default)]
     pub model: String,
     pub messages: Vec<ChatMessage>,
     #[serde(default)]
@@ -99,18 +95,9 @@ pub struct ChatCompletionRequest {
     pub stream_options: Option<StreamOptions>,
     #[serde(default)]
     pub tools: Option<Vec<Tool>>,
-    #[serde(default)]
-    pub tool_choice: Option<Value>,
-    #[serde(default)]
-    pub temperature: Option<f32>,
-    #[serde(default)]
-    pub top_p: Option<f32>,
-    #[serde(default)]
-    pub max_tokens: Option<u32>,
-    #[serde(default)]
-    pub n: Option<u32>,
-    #[serde(default)]
-    pub user: Option<String>,
+    // 注：OpenAI 协议的 `tool_choice` / `temperature` / `top_p` / `max_tokens`
+    // / `n` / `user` 字段被 serde 静默忽略 —— copilot-sdk 的 SessionConfig
+    // 不暴露采样参数或工具选择策略，传过来也无处可塞。等 SDK 支持再加回来。
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -204,6 +191,28 @@ pub struct ModelObject {
     pub object: &'static str,
     pub created: i64,
     pub owned_by: String,
+    // ===== 非 OpenAI 标准字段，方便客户端筛选 =====
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<ModelCapabilitiesView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub billing_multiplier: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub policy_state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supported_reasoning_efforts: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_reasoning_effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelCapabilitiesView {
+    pub vision: bool,
+    pub reasoning_effort: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_prompt_tokens: Option<u32>,
+    pub max_context_window_tokens: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -13,32 +13,46 @@ use crate::{
     streaming::{make_id, now_ts, stream_chat},
     types::{
         ChatCompletionRequest, ChatCompletionResponse, ChatMessage, Choice, FunctionCall,
-        MessageContent, ModelList, ModelObject, ToolCall, Usage,
+        MessageContent, ModelCapabilitiesView, ModelList, ModelObject, ToolCall, Usage,
     },
 };
 
 /// GET /v1/models
-pub async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
-    // SDK 当前未提供模型列表 API，返回默认模型 + 一些常见 ID 占位
+pub async fn list_models(State(state): State<AppState>) -> Result<Json<ModelList>, AppError> {
     let created = now_ts();
     let owned = "github-copilot".to_string();
-    let mut data = vec![ModelObject {
-        id: state.config.default_model.clone(),
-        object: "model",
-        created,
-        owned_by: owned.clone(),
-    }];
-    for m in ["gpt-4o", "gpt-4o-mini", "claude-3.5-sonnet", "claude-sonnet-4.5", "o1-mini"] {
-        if m != state.config.default_model {
-            data.push(ModelObject {
-                id: m.to_string(),
+
+    let models = state
+        .client
+        .list_models()
+        .await
+        .map_err(|e| AppError::Upstream(format!("list_models: {e}")))?;
+
+    let data = models
+        .into_iter()
+        .map(|m| {
+            let caps = ModelCapabilitiesView {
+                vision: m.capabilities.supports.vision,
+                reasoning_effort: m.capabilities.supports.reasoning_effort,
+                max_prompt_tokens: m.capabilities.limits.max_prompt_tokens,
+                max_context_window_tokens: m.capabilities.limits.max_context_window_tokens,
+            };
+            ModelObject {
+                id: m.id,
                 object: "model",
                 created,
                 owned_by: owned.clone(),
-            });
-        }
-    }
-    Json(ModelList { object: "list", data })
+                display_name: Some(m.name),
+                capabilities: Some(caps),
+                billing_multiplier: m.billing.map(|b| b.multiplier),
+                policy_state: m.policy.map(|p| p.state),
+                supported_reasoning_efforts: m.supported_reasoning_efforts,
+                default_reasoning_effort: m.default_reasoning_effort,
+            }
+        })
+        .collect();
+
+    Ok(Json(ModelList { object: "list", data }))
 }
 
 /// POST /v1/chat/completions
@@ -117,10 +131,8 @@ async fn chat_blocking(
         match events.recv().await {
             Ok(event) => match &event.data {
                 SessionEventData::AssistantMessageDelta(d) => content.push_str(&d.delta_content),
-                SessionEventData::AssistantMessage(m) => {
-                    if content.is_empty() {
-                        content = m.content.clone();
-                    }
+                SessionEventData::AssistantMessage(m) if content.is_empty() => {
+                    content = m.content.clone();
                 }
                 SessionEventData::ToolExecutionStart(t) => {
                     finish_reason = "tool_calls".to_string();

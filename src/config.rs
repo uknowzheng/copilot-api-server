@@ -15,8 +15,8 @@ pub struct Config {
     #[arg(long, env = "COPILOT_API_KEY", default_value = "")]
     pub api_key: String,
 
-    /// 默认模型 ID（当客户端请求不指定时使用）
-    #[arg(long, env = "DEFAULT_MODEL", default_value = "gpt-4o")]
+    /// 默认模型 ID（当客户端请求不指定时使用）。`auto` 让 Copilot 自动选模型。
+    #[arg(long, env = "DEFAULT_MODEL", default_value = "auto")]
     pub default_model: String,
 }
 

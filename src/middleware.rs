@@ -1,16 +1,12 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{header, Request, StatusCode},
+    http::{header, Request},
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 
-use crate::{
-    state::AppState,
-    types::{ErrorDetail, ErrorResponse},
-};
+use crate::{error::AppError, state::AppState};
 
 /// Bearer token 鉴权中间件。当 `AppState.config.auth_token()` 为 None 时跳过。
 pub async fn auth(
@@ -31,14 +27,7 @@ pub async fn auth(
     let token = header_val.strip_prefix("Bearer ").unwrap_or("").trim();
 
     if token.is_empty() || token != expected {
-        let body = ErrorResponse {
-            error: ErrorDetail {
-                message: "missing or invalid api key".to_string(),
-                err_type: "authentication_error".to_string(),
-                code: None,
-            },
-        };
-        return (StatusCode::UNAUTHORIZED, Json(body)).into_response();
+        return AppError::Unauthorized.into_response();
     }
 
     next.run(req).await
