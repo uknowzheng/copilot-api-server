@@ -46,9 +46,9 @@ pub struct ChatMessage {
     pub tool_call_id: Option<String>,
 }
 
-fn is_content_empty(c: &MessageContent) -> bool {
-    matches!(c, MessageContent::Null)
-}
+// fn is_content_empty(c: &MessageContent) -> bool {
+//     matches!(c, MessageContent::Null)
+// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
