@@ -36,7 +36,7 @@ pub struct ImageUrl {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
-    #[serde(default, skip_serializing_if = "is_content_empty")]
+    #[serde(default)]
     pub content: MessageContent,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
